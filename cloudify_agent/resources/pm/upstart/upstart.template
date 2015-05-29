@@ -1,0 +1,30 @@
+description "Cloudify Agent"
+
+start on runlevel [2345]
+stop on runlevel [016]
+
+kill timeout 60
+respawn
+respawn limit 10 5
+
+setuid {{ user }}
+setgid {{ user }}
+
+. {{ config_path }}
+. {{ extra_env_path }}
+
+exec {{ virtualenv_path }}/bin/celery worker \
+-Ofair \
+--include=$(cat {{ includes_path }}) \
+--broker={{ broker_url }} \
+--hostname={{ name }} \
+--events \
+--app=cloudify_agent.app.app \
+--loglevel={{ log_level }} \
+-Q {{ queue }} \
+--logfile={{ log_file }} \
+--pidfile={{ pid_file }} \
+--autoscale={{ max_workers }},{{ min_workers }} \
+--maxtasksperchild=10 \
+--without-gossip \
+--without-mingle
