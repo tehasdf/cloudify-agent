@@ -33,7 +33,7 @@ from cloudify_agent.shell.decorators import handle_failures
               help='The process management system to use '
                    'when creating the daemon. [env {0}]'
               .format(env.CLOUDIFY_DAEMON_PROCESS_MANAGEMENT),
-              type=click.Choice(['init.d', 'nssm', 'detach']),
+              type=click.Choice(['init.d', 'nssm', 'detach', 'upstart']),
               required=True,
               envvar=env.CLOUDIFY_DAEMON_PROCESS_MANAGEMENT)
 @click.option('--manager-port',
