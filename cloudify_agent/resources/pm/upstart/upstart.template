@@ -7,24 +7,17 @@ kill timeout 60
 respawn
 respawn limit 10 5
 
-setuid {{ user }}
-setgid {{ user }}
-
 . {{ config_path }}
-. {{ extra_env_path }}
 
-exec {{ virtualenv_path }}/bin/celery worker \
+setuid ${CELERYD_GROUP}
+setgid ${CELERYD_USER}
+
+exec ${CELERY_BIN} worker \
 -Ofair \
---include=$(cat {{ includes_path }}) \
---broker={{ broker_url }} \
---hostname={{ name }} \
---events \
+--include=${CELERYD_INCLUDES} \
+--broker=${CELERY_BROKER_URL} \
 --app=cloudify_agent.app.app \
---loglevel={{ log_level }} \
--Q {{ queue }} \
---logfile={{ log_file }} \
---pidfile={{ pid_file }} \
---autoscale={{ max_workers }},{{ min_workers }} \
---maxtasksperchild=10 \
---without-gossip \
---without-mingle
+--loglevel=${CELERYD_LOG_LEVEL} \
+--logfile=${CELERYD_LOG_FILE} \
+--pidfile=${CELERY_D_PID_FILE} \
+${CELERYD_OPTS}
