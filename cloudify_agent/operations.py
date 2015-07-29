@@ -13,21 +13,30 @@
 #  * See the License for the specific language governing permissions and
 #  * limitations under the License.
 
+import uuid
 import time
 import threading
 import sys
+import os
+import copy
+
+import celery
 
 from cloudify import ctx
 from cloudify.exceptions import NonRecoverableError
-from cloudify.utils import get_manager_file_server_blueprints_root_url
+from cloudify.utils import (
+    get_manager_file_server_blueprints_root_url,
+    get_manager_file_server_url)
 from cloudify.decorators import operation
 
 from cloudify_agent.api.plugins.installer import PluginInstaller
 from cloudify_agent.api.factory import DaemonFactory
+from cloudify_agent.api import defaults
 from cloudify_agent.api import exceptions
 from cloudify_agent.api import utils
 from cloudify_agent.app import app
 
+from cloudify_agent.installer.config import configuration
 
 ##########################################################################
 # this array is used for creating the initial includes file of the agent
@@ -44,6 +53,8 @@ CLOUDIFY_AGENT_BUILT_IN_TASK_MODULES = [
     'plugin_installer.tasks',
     'windows_plugin_installer.tasks'
 ]
+
+_VERSION = '3.3'
 
 
 def _install_plugins(plugins):
@@ -191,3 +202,99 @@ def _save_daemon(daemon):
         username=utils.internal.get_daemon_user(),
         storage=utils.internal.get_daemon_storage_dir())
     factory.save(daemon)
+
+
+def _get_broker_url(agent):
+    if 'broker_url' in agent:
+        return agent['broker_url']
+    broker_port = agent.get('broker_port', defaults.BROKER_PORT)
+    broker_ip = agent.get('broker_ip', agent['manager_ip'])
+    return defaults.BROKER_URL.format(broker_ip,
+                                      broker_port)
+
+
+def _generate_new_agent_name(old_agent_name, suffix):
+    agent_name = old_agent_name
+    if len(old_agent_name) > len(suffix):
+        old_suffix = old_agent_name[-len(suffix):]
+        try:
+            uuid.UUID(old_suffix)
+            agent_name = old_agent_name[0:-len(suffix)]
+            if agent_name.endswith('_'):
+                agent_name = agent_name[:-1]
+        except ValueError:
+            agent_name = old_agent_name
+    new_agent_name = '{0}_{1}'.format(agent_name, suffix)
+    if new_agent_name != old_agent_name:
+        return new_agent_name
+    else:
+        return '{0}_{1}'.format(old_agent_name, suffix)
+
+
+def create_new_agent_dict(old_agent, suffix=None):
+    if not suffix:
+        suffix = str(uuid.uuid4())
+    new_agent = copy.deepcopy(old_agent)
+    fields_to_delete = ['name', 'queue', 'workdir', 'agent_dir', 'envdir',
+                        'manager_ip', 'package_url', 'source_url'
+                        'manager_port', 'broker_url', 'broker_port',
+                        'broker_ip', 'key', 'version']
+    for field in fields_to_delete:
+        if field in new_agent:
+            del(new_agent[field])
+    new_agent['name'] = _generate_new_agent_name(old_agent['name'], suffix)
+    configuration.reinstallation_attributes(new_agent)
+    new_agent['broker_url'] = _get_broker_url(new_agent)
+    new_agent['manager_file_server_url'] = get_manager_file_server_url()
+    # Assuming that if there is no version info in the agent then
+    # this agent was installed by current manager.
+    new_agent['old_agent_version'] = old_agent.get('version', _VERSION)
+    return new_agent
+
+
+def create_agent_from_old_agent(install_agent_timeout=300):
+    if 'cloudify_agent' not in ctx.instance.runtime_properties:
+        raise NonRecoverableError(
+            'cloudify_agent key not available in runtime_properties')
+    old_agent = ctx.instance.runtime_properties['cloudify_agent']
+    new_agent = create_new_agent_dict(old_agent)
+    # We retrieve broker url from old agent in order to support
+    # cases when old agent is not connected to current rabbit server.
+    broker_url = _get_broker_url(old_agent)
+    env_broker_url = os.environ.get('CELERY_BROKER_URL')
+    os.environ['CELERY_BROKER_URL'] = broker_url
+    try:
+        celery_client = celery.Celery(broker=broker_url, backend=broker_url)
+        if new_agent['old_agent_version'] != '3.2':
+            celery_client.conf.update(
+                CELERY_TASK_RESULT_EXPIRES=defaults.CELERY_TASK_RESULT_EXPIRES
+
+            )
+        script_format = '{0}/cloudify/install_agent.py'
+        script_url = script_format.format(get_manager_file_server_url())
+        result = celery_client.send_task(
+            'script_runner.tasks.run',
+            args=[script_url],
+            kwargs={'cloudify_agent': new_agent},
+            queue=old_agent['queue']
+        )
+        returned_agent = result.get(timeout=install_agent_timeout)
+    finally:
+        if env_broker_url is None:
+            del(os.environ['CELERY_BROKER_URL'])
+        else:
+            os.environ['CELERY_BROKER_URL'] = env_broker_url
+    # Make sure that new celery agent was started:
+    agent_status = app.control.inspect(destination=[
+        'celery@{0}'.format(returned_agent['name'])])
+    if not agent_status.active():
+        raise NonRecoverableError('Could not start agent.')
+    # Setting old_cloudify_agent in order to uninstall it later.
+    ctx.instance.runtime_properties['old_cloudify_agent'] = old_agent
+    returned_agent.pop('old_agent_version', None)
+    ctx.instance.runtime_properties['cloudify_agent'] = returned_agent
+
+
+@operation
+def create_agent_amqp(install_agent_timeout, **_):
+    create_agent_from_old_agent(install_agent_timeout)

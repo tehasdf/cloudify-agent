@@ -122,6 +122,10 @@ def connection_attributes(cloudify_agent):
 
 @group('cfy-agent')
 def cfy_agent_attributes(cloudify_agent):
+    _cfy_agent_attributes_no_defaults(cloudify_agent)
+
+
+def _cfy_agent_attributes_no_defaults(cloudify_agent):
 
     if 'process_management' not in cloudify_agent:
         cloudify_agent['process_management'] = {}
@@ -155,62 +159,18 @@ def cfy_agent_attributes(cloudify_agent):
         cloudify_agent['manager_ip'] = get_manager_ip()
 
 
-@group('installation')
-def installation_attributes(cloudify_agent, runner):
+def _get_package_url(cloudify_agent):
+    if cloudify_agent['windows']:
+        return '{0}/packages/agents/cloudify-windows-agent.exe'.format(
+            get_manager_file_server_url())
+    else:
+        return '{0}/packages/agents/{1}-{2}-agent.tar.gz'.format(
+            get_manager_file_server_url(),
+            cloudify_agent['distro'],
+            cloudify_agent['distro_codename'])
 
-    # This means that the agent will install itself
-    # (a.k.a ssh-less installation)
-    if not cloudify_agent['remote_execution']:
-        return
 
-    if 'source_url' not in cloudify_agent:
-
-        if 'package_url' not in cloudify_agent:
-
-            if cloudify_agent['windows']:
-
-                # no distribution difference in windows installation
-                cloudify_agent['package_url'] = '{0}/packages/agents' \
-                                                '/cloudify-windows-agent.exe'\
-                    .format(get_manager_file_server_url())
-            else:
-                # build one from distro and distro_codename
-                if cloudify_agent['local']:
-                    cloudify_agent['distro'] = platform.dist()[0].lower()
-                else:
-                    dist = runner.machine_distribution()
-                    cloudify_agent['distro'] = dist[0].lower()
-
-                # distro was not specified, try to auto-detect
-                if cloudify_agent['local']:
-                    cloudify_agent['distro_codename'] = platform.dist()[
-                        2].lower()
-                else:
-                    dist = runner.machine_distribution()
-                    cloudify_agent['distro_codename'] = dist[2].lower()
-
-                cloudify_agent['package_url'] = '{0}/packages/agents' \
-                                                '/{1}-{2}-agent.tar.gz' \
-                    .format(get_manager_file_server_url(),
-                            cloudify_agent['distro'],
-                            cloudify_agent['distro_codename'])
-
-    if 'basedir' not in cloudify_agent:
-        if cloudify_agent['local']:
-            basedir = utils.get_home_dir(cloudify_agent['user'])
-        else:
-            if cloudify_agent['windows']:
-
-                # can't seem to figure out how to get the home_dir remotely
-                # on windows. same was as fabric wont work because the
-                # 'pwd' module does not exists in a windows python
-                # installation.
-                # TODO - maybe use some environment variables heuristics?
-                basedir = 'C:\\Users\\{0}'.format(cloudify_agent['user'])
-            else:
-                basedir = runner.home_dir(cloudify_agent['user'])
-        cloudify_agent['basedir'] = basedir
-
+def directory_attributes(cloudify_agent):
     if 'agent_dir' not in cloudify_agent:
         name = cloudify_agent['name']
         basedir = cloudify_agent['basedir']
@@ -235,3 +195,69 @@ def installation_attributes(cloudify_agent, runner):
         else:
             envdir = os.path.join(agent_dir, 'env')
         cloudify_agent['envdir'] = envdir
+
+
+@group('installation')
+def _add_installation_defaults(cloudify_agent):
+    pass
+
+
+@group('cfy-agent')
+def _add_cfy_agent_defaults(cloudify_agent):
+    pass
+
+
+def reinstallation_attributes(cloudify_agent):
+    _cfy_agent_attributes_no_defaults(cloudify_agent)
+    _add_cfy_agent_defaults(cloudify_agent)
+    if 'basedir' in cloudify_agent:
+        directory_attributes(cloudify_agent)
+    _add_installation_defaults(cloudify_agent)
+
+
+@group('installation')
+def installation_attributes(cloudify_agent, runner):
+
+    # This means that the agent will install itself
+    # (a.k.a ssh-less installation)
+    if not cloudify_agent['remote_execution']:
+        return
+
+    if 'source_url' not in cloudify_agent:
+
+        if 'package_url' not in cloudify_agent:
+
+            if not cloudify_agent['windows']:
+                if cloudify_agent['local']:
+                    cloudify_agent['distro'] = platform.dist()[0].lower()
+                else:
+                    dist = runner.machine_distribution()
+                    cloudify_agent['distro'] = dist[0].lower()
+
+                # distro was not specified, try to auto-detect
+                if cloudify_agent['local']:
+                    cloudify_agent['distro_codename'] = platform.dist()[
+                        2].lower()
+                else:
+                    dist = runner.machine_distribution()
+                    cloudify_agent['distro_codename'] = dist[2].lower()
+
+            cloudify_agent['package_url'] = _get_package_url(cloudify_agent)
+
+    if 'basedir' not in cloudify_agent:
+        if cloudify_agent['local']:
+            basedir = utils.get_home_dir(cloudify_agent['user'])
+        else:
+            if cloudify_agent['windows']:
+
+                # can't seem to figure out how to get the home_dir remotely
+                # on windows. same was as fabric wont work because the
+                # 'pwd' module does not exists in a windows python
+                # installation.
+                # TODO - maybe use some environment variables heuristics?
+                basedir = utils.get_windows_home_dir(cloudify_agent['user'])
+            else:
+                basedir = runner.home_dir(cloudify_agent['user'])
+        cloudify_agent['basedir'] = basedir
+
+    directory_attributes(cloudify_agent)
