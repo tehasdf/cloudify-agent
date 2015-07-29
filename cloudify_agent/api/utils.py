@@ -28,6 +28,7 @@ import cloudify_agent
 from cloudify_agent import VIRTUALENV
 from cloudify_agent.api import defaults
 
+
 logger = setup_logger('cloudify_agent.api.utils')
 
 
@@ -69,17 +70,20 @@ class _Internal(object):
 
         return os.environ[cls.CLOUDIFY_DAEMON_USER_KEY]
 
-    @staticmethod
-    def get_storage_directory(username=None):
+    @classmethod
+    def get_storage_directory(cls, username=None):
 
         """
         Retrieve path to the directory where all daemon
         registered under a specific username will be stored.
+        If no `username` is provided, username under which current daemon
+        was installed will be used.
 
         :param username: the user
 
         """
-
+        if username is None and cls.CLOUDIFY_DAEMON_USER_KEY in os.environ:
+            username = cls.get_daemon_user()
         return os.path.join(get_home_dir(username), '.cfy-agent')
 
     @staticmethod
@@ -145,6 +149,10 @@ def get_agent_stats(name, celery):
     return stats
 
 
+def get_windows_home_dir(username):
+    return 'C:\\Users\\{0}'.format(username)
+
+
 def get_home_dir(username=None):
 
     """
@@ -158,7 +166,7 @@ def get_home_dir(username=None):
         if username is None:
             return os.path.expanduser('~')
         else:
-            return os.path.expanduser('~{0}'.format(username))
+            return get_windows_home_dir(username)
     else:
         import pwd
         if username is None:

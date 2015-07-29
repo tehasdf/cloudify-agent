@@ -17,7 +17,7 @@ import os
 import sys
 
 if os.name == 'nt':
-    if 'Scripts' not in sys.executable:
+    if 'scripts' not in sys.executable.lower():
         VIRTUALENV = os.path.dirname(sys.executable)
     else:
         VIRTUALENV = os.path.dirname(os.path.dirname(sys.executable))
