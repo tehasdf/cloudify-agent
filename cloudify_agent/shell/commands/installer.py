@@ -19,6 +19,7 @@ import os
 
 from cloudify_agent.api import utils
 from cloudify_agent.shell.decorators import handle_failures
+from cloudify_agent.installer.config import configuration
 from cloudify_agent.installer.operations import prepare_local_installer
 
 
@@ -26,15 +27,24 @@ from cloudify_agent.installer.operations import prepare_local_installer
 @click.option('--agent-file',
               help='Path to dictionary describing agent to install.',
               type=click.File())
+@click.option('--output-agent-file',
+              help='Path to output agent configuration')
 @handle_failures
-def install_local(agent_file):
+def install_local(agent_file, output_agent_file):
     if agent_file is None:
         raise click.ClickException('--agent-file should be specified.')
     cloudify_agent = json.load(agent_file)
     os.environ['CELERY_BROKER_URL'] = str(cloudify_agent['broker_url'])
     os.environ[utils.internal.CLOUDIFY_DAEMON_USER_KEY] = str(
         cloudify_agent['user'])
+    if 'basedir' not in cloudify_agent:
+        cloudify_agent['basedir'] = utils.get_home_dir(cloudify_agent['user'])
+    configuration.directory_attributes(cloudify_agent)
     installer = prepare_local_installer(cloudify_agent)
     installer.create_agent()
     installer.configure_agent()
     installer.start_agent()
+    if output_agent_file is not None:
+        with open(output_agent_file, 'w') as out:
+            out.write(json.dumps(cloudify_agent))
+
