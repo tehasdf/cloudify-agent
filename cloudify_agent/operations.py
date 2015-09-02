@@ -24,7 +24,9 @@ import celery
 
 from cloudify import ctx
 from cloudify.exceptions import NonRecoverableError
-from cloudify.utils import get_manager_file_server_blueprints_root_url
+from cloudify.utils import (
+    get_manager_file_server_blueprints_root_url,
+    get_manager_file_server_url)
 from cloudify.decorators import operation
 
 from cloudify_rest_client.client import DEFAULT_API_VERSION
@@ -225,6 +227,7 @@ def create_new_agent_dict(old_agent, suffix=None):
     new_agent['name'] = '{0}_{1}'.format(old_agent['name'], suffix)
     configuration.reinstallation_attributes(new_agent)
     new_agent['broker_url'] = _get_broker_url(new_agent)
+    new_agent['manager_file_server_url'] = get_manager_file_server_url()
     return new_agent
 
 
@@ -261,7 +264,7 @@ def create_agent_from_old_agent():
             queue=old_agent['queue']
         )
         timeout = 2 * 60
-        result.get(timeout=timeout)
+        returned_agent = result.get(timeout=timeout)
     finally:
         if env_broker_url is None:
             del(os.environ['CELERY_BROKER_URL'])
@@ -269,12 +272,12 @@ def create_agent_from_old_agent():
             os.environ['CELERY_BROKER_URL'] = env_broker_url
     # Make sure that new celery agent was started:
     agent_status = app.control.inspect(destination=[
-        'celery@{0}'.format(new_agent['name'])])
+        'celery@{0}'.format(returned_agent['name'])])
     if not agent_status.active():
         raise NonRecoverableError('Could not start agent.')
     # Setting old_cloudify_agent in order to uninstall it later.
     ctx.instance.runtime_properties['old_cloudify_agent'] = old_agent
-    ctx.instance.runtime_properties['cloudify_agent'] = new_agent
+    ctx.instance.runtime_properties['cloudify_agent'] = returned_agent
     del(ctx.instance.runtime_properties['new_cloudify_agent'])
 
 

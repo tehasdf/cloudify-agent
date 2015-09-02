@@ -135,7 +135,7 @@ class TestCreateAgentAmqp(BaseTest):
         equal_keys = ['ip', 'distro', 'distro_codename', 'basedir', 'user']
         for k in equal_keys:
             self.assertEqual(old_agent[k], new_agent[k])
-        nonequal_keys = ['package_url', 'agent_dir', 'workdir',
+        nonequal_keys = ['agent_dir', 'workdir',
                          'envdir', 'name', 'manager_ip']
         for k in nonequal_keys:
             self.assertNotEqual(old_agent[k], new_agent[k])

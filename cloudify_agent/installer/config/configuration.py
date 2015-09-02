@@ -170,7 +170,7 @@ def _get_package_url(cloudify_agent):
             cloudify_agent['distro_codename'])
 
 
-def _directory_attributes(cloudify_agent):
+def directory_attributes(cloudify_agent):
     if 'agent_dir' not in cloudify_agent:
         name = cloudify_agent['name']
         basedir = cloudify_agent['basedir']
@@ -210,9 +210,8 @@ def _add_cfy_agent_defaults(cloudify_agent):
 def reinstallation_attributes(cloudify_agent):
     _cfy_agent_attributes_no_defaults(cloudify_agent)
     _add_cfy_agent_defaults(cloudify_agent)
-    if 'package_url' not in cloudify_agent:
-        cloudify_agent['package_url'] = _get_package_url(cloudify_agent)
-    _directory_attributes(cloudify_agent)
+    if 'basedir' in cloudify_agent:
+        directory_attributes(cloudify_agent)
     _add_installation_defaults(cloudify_agent)
 
 
@@ -261,4 +260,4 @@ def installation_attributes(cloudify_agent, runner):
                 basedir = runner.home_dir(cloudify_agent['user'])
         cloudify_agent['basedir'] = basedir
 
-    _directory_attributes(cloudify_agent)
+    directory_attributes(cloudify_agent)
