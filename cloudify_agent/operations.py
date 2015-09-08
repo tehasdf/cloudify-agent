@@ -29,8 +29,6 @@ from cloudify.utils import (
     get_manager_file_server_url)
 from cloudify.decorators import operation
 
-from cloudify_rest_client.client import DEFAULT_API_VERSION
-
 from cloudify_agent.api.plugins.installer import PluginInstaller
 from cloudify_agent.api.factory import DaemonFactory
 from cloudify_agent.api import defaults
@@ -237,8 +235,6 @@ def create_agent_from_old_agent():
             'cloudify_agent key not available in runtime_properties')
     old_agent = ctx.instance.runtime_properties['cloudify_agent']
     new_agent = create_new_agent_dict(old_agent)
-    ctx.instance.runtime_properties['new_cloudify_agent'] = new_agent
-    ctx.instance.update()
     # We retrieve broker url from old agent in order to support
     # cases when old agent is not connected to current rabbit server.
     broker_url = _get_broker_url(old_agent)
@@ -246,21 +242,16 @@ def create_agent_from_old_agent():
     os.environ['CELERY_BROKER_URL'] = broker_url
     try:
         celery_client = celery.Celery(broker=broker_url, backend=broker_url)
-        # This one will have to be modified for 3.2
         app_conf = {
             'CELERY_TASK_RESULT_EXPIRES': defaults.CELERY_TASK_RESULT_EXPIRES
         }
         celery_client.conf.update(**app_conf)
-        script_format = ('http://{0}/api/{1}/node-instances/'
-                         '{2}/install_agent.py')
-        script_url = script_format.format(
-            new_agent['manager_ip'],
-            DEFAULT_API_VERSION,
-            ctx.instance.id
-        )
+        script_format = '{0}/cloudify/install_agent.py'
+        script_url = script_format.format(get_manager_file_server_url())
         result = celery_client.send_task(
             'script_runner.tasks.run',
             args=[script_url],
+            kwargs={'cloudify_agent': new_agent},
             queue=old_agent['queue']
         )
         timeout = 2 * 60
@@ -278,7 +269,6 @@ def create_agent_from_old_agent():
     # Setting old_cloudify_agent in order to uninstall it later.
     ctx.instance.runtime_properties['old_cloudify_agent'] = old_agent
     ctx.instance.runtime_properties['cloudify_agent'] = returned_agent
-    del(ctx.instance.runtime_properties['new_cloudify_agent'])
 
 
 @operation
