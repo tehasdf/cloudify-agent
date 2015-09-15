@@ -17,6 +17,7 @@ function download_resources() {
     curl -O https://dl.dropboxusercontent.com/u/407576/cfy-win-cli-package-resources/pip/get-pip.py
     curl -O https://dl.dropboxusercontent.com/u/407576/cfy-win-cli-package-resources/pip/pip-6.1.1-py2.py3-none-any.whl
     curl -O https://dl.dropboxusercontent.com/u/407576/cfy-win-cli-package-resources/pip/setuptools-15.2-py2.py3-none-any.whl
+    curl -O https://pypi.python.org/packages/py2.py3/w/wheel/wheel-0.24.0-py2.py3-none-any.whl
     popd
     pushd packaging/source/python
     curl -O https://dl.dropboxusercontent.com/u/407576/cfy-win-cli-package-resources/python/python.msi
