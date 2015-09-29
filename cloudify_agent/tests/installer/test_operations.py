@@ -25,7 +25,7 @@ from cloudify_agent.tests.utils import (
     FileServer,
     get_source_uri,
     get_requirements_uri)
-from cloudify_agent.tests.api.pm import BaseDaemonLiveTestCase
+from cloudify_agent.tests.utils import BaseDaemonLiveTestCase
 from cloudify_agent.tests.api.pm import only_ci
 from cloudify_agent.api import utils
 

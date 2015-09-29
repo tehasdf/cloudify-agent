@@ -24,34 +24,14 @@ from celery import Celery
 from mock import patch
 
 from cloudify.utils import LocalCommandRunner
-from cloudify_agent.tests import BaseTest, utils
+from cloudify_agent.tests import utils
 from cloudify_agent.tests.api.pm import only_ci
 from cloudify_agent.installer.config import configuration
 
 from cloudify_agent.tests.installer.config import mock_context
 
 
-class TestInstaller(BaseTest):
-
-    @classmethod
-    def setUpClass(cls):
-        cls._resources_dir = tempfile.mkdtemp(
-            prefix='file-server-resource-base')
-        cls._fs = utils.FileServer(
-            root_path=cls._resources_dir)
-        cls._fs.start()
-        config = {
-            'cloudify_agent_module': utils.get_source_uri(),
-            'requirements_file': utils.get_requirements_uri()
-        }
-        package_name = utils.create_agent_package(cls._resources_dir, config)
-        cls._package_url = 'http://localhost:{0}/{1}'.format(
-            cls._fs.port, package_name)
-
-    @classmethod
-    def tearDownClass(cls):
-        cls._fs.stop()
-        shutil.rmtree(cls._resources_dir)
+class TestInstaller(utils.AgentPackageTest):
 
     @patch('cloudify_agent.installer.config.configuration.ctx',
            mock_context())
@@ -101,7 +81,7 @@ class TestInstaller(BaseTest):
         base_dir = tempfile.mkdtemp()
         agent = {
             'ip': 'localhost',
-            'package_url': self._package_url,
+            'package_url': self.package_url,
             'manager_ip': 'localhost',
             'basedir': base_dir,
             'broker_url': 'amqp://guest:guest@127.0.0.1:5672//',
@@ -118,7 +98,7 @@ class TestInstaller(BaseTest):
     def test_installation_no_basedir(self):
         agent = {
             'ip': 'localhost',
-            'package_url': self._package_url,
+            'package_url': self.package_url,
             'manager_ip': 'localhost',
             'broker_url': 'amqp://guest:guest@127.0.0.1:5672//',
             'windows': os.name == 'nt',

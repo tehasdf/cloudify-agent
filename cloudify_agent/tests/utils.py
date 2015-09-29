@@ -20,11 +20,15 @@ import socket
 import subprocess
 import os
 import filecmp
+import shutil
 import tarfile
+import tempfile
 
 import cloudify_agent
 
 from contextlib import contextmanager
+
+from celery import Celery
 
 from agent_packager import packager
 
@@ -33,7 +37,48 @@ from cloudify.utils import LocalCommandRunner
 from cloudify.utils import setup_logger
 
 from cloudify_agent import VIRTUALENV
-from cloudify_agent.tests import resources
+from cloudify_agent.api import defaults, utils
+from cloudify_agent.tests import resources, BaseTest
+
+
+BUILT_IN_TASKS = [
+    'cloudify.plugins.workflows.scale',
+    'cloudify.plugins.workflows.auto_heal_reinstall_node_subgraph',
+    'cloudify.plugins.workflows.uninstall',
+    'cloudify.plugins.workflows.execute_operation',
+    'cloudify.plugins.workflows.install',
+    'script_runner.tasks.execute_workflow',
+    'script_runner.tasks.run',
+    'diamond_agent.tasks.install',
+    'diamond_agent.tasks.uninstall',
+    'diamond_agent.tasks.start',
+    'diamond_agent.tasks.stop',
+    'diamond_agent.tasks.add_collectors',
+    'diamond_agent.tasks.del_collectors',
+    'cloudify_agent.operations.create_agent_amqp',
+    'cloudify_agent.operations.delete_old_agents_amqp',
+    'cloudify_agent.operations.install_plugins',
+    'cloudify_agent.operations.restart',
+    'cloudify_agent.operations.stop',
+    'cloudify_agent.installer.operations.create',
+    'cloudify_agent.installer.operations.configure',
+    'cloudify_agent.installer.operations.start',
+    'cloudify_agent.installer.operations.stop',
+    'cloudify_agent.installer.operations.delete',
+    'cloudify_agent.installer.operations.restart',
+    'worker_installer.tasks.install',
+    'worker_installer.tasks.start',
+    'worker_installer.tasks.stop',
+    'worker_installer.tasks.restart',
+    'worker_installer.tasks.uninstall',
+    'windows_agent_installer.tasks.install',
+    'windows_agent_installer.tasks.start',
+    'windows_agent_installer.tasks.stop',
+    'windows_agent_installer.tasks.restart',
+    'windows_agent_installer.tasks.uninstall',
+    'plugin_installer.tasks.install',
+    'windows_plugin_installer.tasks.install'
+]
 
 
 logger = setup_logger('cloudify_agent.tests.utils')
@@ -131,6 +176,108 @@ def create_agent_package(directory, config, package_logger=None):
                                       .format(platform.system()))
     finally:
         os.chdir(original)
+
+
+class BaseDaemonLiveTestCase(BaseTest):
+
+    def setUp(self):
+        super(BaseDaemonLiveTestCase, self).setUp()
+        self.celery = Celery(broker='amqp://',
+                             backend='amqp://')
+        self.celery.conf.update(
+            CELERY_TASK_RESULT_EXPIRES=defaults.CELERY_TASK_RESULT_EXPIRES)
+        self.runner = LocalCommandRunner(logger=self.logger)
+        self.daemons = []
+
+    def tearDown(self):
+        super(BaseDaemonLiveTestCase, self).tearDown()
+        if os.name == 'nt':
+            # with windows we need to stop and remove the service
+            nssm_path = utils.get_absolute_resource_path(
+                os.path.join('pm', 'nssm', 'nssm.exe'))
+            for daemon in self.daemons:
+                self.runner.run('sc stop {0}'.format(daemon.name),
+                                exit_on_failure=False)
+                self.runner.run('{0} remove {1} confirm'
+                                .format(nssm_path, daemon.name),
+                                exit_on_failure=False)
+        else:
+            self.runner.run("pkill -9 -f 'celery'", exit_on_failure=False)
+
+    def assert_registered_tasks(self, name, additional_tasks=None):
+        if not additional_tasks:
+            additional_tasks = set()
+        destination = 'celery@{0}'.format(name)
+        c_inspect = self.celery.control.inspect(destination=[destination])
+        registered = c_inspect.registered() or {}
+
+        def include(task):
+            return 'celery' not in task
+
+        daemon_tasks = set(filter(include, set(registered[destination])))
+        expected_tasks = set(BUILT_IN_TASKS)
+        expected_tasks.update(additional_tasks)
+        self.assertEqual(expected_tasks, daemon_tasks)
+
+    def assert_daemon_alive(self, name):
+        stats = utils.get_agent_stats(name, self.celery)
+        self.assertTrue(stats is not None)
+
+    def assert_daemon_dead(self, name):
+        stats = utils.get_agent_stats(name, self.celery)
+        self.assertTrue(stats is None)
+
+    def wait_for_daemon_alive(self, name, timeout=10):
+        deadline = time.time() + timeout
+
+        while time.time() < deadline:
+            stats = utils.get_agent_stats(name, self.celery)
+            if stats:
+                return
+            self.logger.info('Waiting for daemon {0} to start...'
+                             .format(name))
+            time.sleep(5)
+        raise RuntimeError('Failed waiting for daemon {0} to start. Waited '
+                           'for {1} seconds'.format(name, timeout))
+
+    def wait_for_daemon_dead(self, name, timeout=10):
+        deadline = time.time() + timeout
+
+        while time.time() < deadline:
+            stats = utils.get_agent_stats(name, self.celery)
+            if not stats:
+                return
+            self.logger.info('Waiting for daemon {0} to stop...'
+                             .format(name))
+            time.sleep(1)
+        raise RuntimeError('Failed waiting for daemon {0} to stop. Waited '
+                           'for {1} seconds'.format(name, timeout))
+
+
+class AgentPackageTest(BaseDaemonLiveTestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls._resources_dir = tempfile.mkdtemp(
+            prefix='file-server-resource-base')
+        cls._fs = FileServer(
+            root_path=cls._resources_dir)
+        cls._fs.start()
+        if 'AGENT_PACKAGE_URL' in os.environ:
+            cls.package_url = os.environ['AGENT_PACKAGE_URL']
+        else:
+            config = {
+                'cloudify_agent_module': get_source_uri(),
+                'requirements_file': get_requirements_uri()
+            }
+            package_name = create_agent_package(cls._resources_dir, config)
+            cls.package_url = 'http://localhost:{0}/{1}'.format(
+                cls._fs.port, package_name)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._fs.stop()
+        shutil.rmtree(cls._resources_dir)
 
 
 def are_dir_trees_equal(dir1, dir2):

@@ -37,6 +37,7 @@ from cloudify_agent.api import utils
 from cloudify_agent.app import app
 
 from cloudify_agent.installer.config import configuration
+from cloudify_agent.installer.operations import prepare_local_installer
 
 ##########################################################################
 # this array is used for creating the initial includes file of the agent
@@ -246,9 +247,8 @@ def create_new_agent_dict(old_agent, suffix=None):
     configuration.reinstallation_attributes(new_agent)
     new_agent['broker_url'] = _get_broker_url(new_agent)
     new_agent['manager_file_server_url'] = get_manager_file_server_url()
-    # Assuming that if there is no version info in the agent then
-    # this agent was installed by current manager.
-    new_agent['old_agent_version'] = old_agent.get('version', _VERSION)
+    new_agent['old_agent_version'] = old_agent['version']
+    new_agent['version'] = _VERSION
     return new_agent
 
 
@@ -257,6 +257,7 @@ def create_agent_from_old_agent(install_agent_timeout=300):
         raise NonRecoverableError(
             'cloudify_agent key not available in runtime_properties')
     old_agent = ctx.instance.runtime_properties['cloudify_agent']
+    old_agent['version'] = old_agent.get('version', _VERSION)
     new_agent = create_new_agent_dict(old_agent)
     # We retrieve broker url from old agent in order to support
     # cases when old agent is not connected to current rabbit server.
@@ -290,7 +291,9 @@ def create_agent_from_old_agent(install_agent_timeout=300):
     if not agent_status.active():
         raise NonRecoverableError('Could not start agent.')
     # Setting old_cloudify_agent in order to uninstall it later.
-    ctx.instance.runtime_properties['old_cloudify_agent'] = old_agent
+    old_agents = ctx.instance.runtime_properties.get('cloudify_old_agents', [])
+    old_agents.append(old_agent)
+    ctx.instance.runtime_properties['cloudify_old_agents'] = old_agents
     returned_agent.pop('old_agent_version', None)
     ctx.instance.runtime_properties['cloudify_agent'] = returned_agent
 
@@ -298,3 +301,24 @@ def create_agent_from_old_agent(install_agent_timeout=300):
 @operation
 def create_agent_amqp(install_agent_timeout, **_):
     create_agent_from_old_agent(install_agent_timeout)
+
+
+@operation
+def delete_old_agents_amqp(**_):
+    ctx.logger.info('Deleting old agents')
+    old_agents = ctx.instance.runtime_properties.get('cloudify_old_agents', [])
+    for old_agent in old_agents:
+        try:
+            if old_agent['version'] != '3.3':
+                raise RuntimeError('Version {0} not yet supported'.format(
+                    old_agent['version']))
+            installer = prepare_local_installer(old_agent)
+            installer.stop_agent()
+            installer.delete_agent()
+            old_agent['deleted'] = True
+        except Exception as e:
+            ctx.logger.error('Failed uninstalling agent {0}: {1}'.format(
+                old_agent.get('name'), e))
+    ctx.instance.runtime_properties['cloudify_old_agents'] = [
+        agent for agent in old_agents if old_agent.get('deleted') is None
+    ]

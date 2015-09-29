@@ -18,6 +18,7 @@ from mock import patch, MagicMock
 
 from cloudify import constants
 from cloudify import ctx
+from cloudify.workflows import local
 from cloudify import mocks
 
 from cloudify.exceptions import NonRecoverableError
@@ -25,10 +26,14 @@ from cloudify.exceptions import NonRecoverableError
 from cloudify.state import current_ctx
 
 from cloudify_agent import operations
+from cloudify_agent.api.utils import internal as api_internal
 from cloudify_agent.installer.config import configuration
 
 from cloudify_agent.tests import utils
 from cloudify_agent.tests import BaseTest
+from cloudify_agent.tests import resources
+
+from cloudify_agent.tests.api.pm import only_ci
 
 from cloudify_agent.tests.installer.config import mock_context
 
@@ -98,6 +103,7 @@ class TestCreateAgentAmqp(BaseTest):
             'user': 'vagrant',
             'key': '~/.ssh/id_rsa',
             'windows': False,
+            'version': '3.3',
             'package_url': 'http://10.0.4.46:53229/packages/agents/'
                            'ubuntu-trusty-agent.tar.gz',
         }
@@ -180,3 +186,30 @@ class TestCreateAgentAmqp(BaseTest):
             self.assertNotEquals(old_queue, new_queue)
         finally:
             current_ctx.set(old_context)
+
+
+class TestDeleteAmqp(utils.AgentPackageTest):
+
+    @patch('cloudify.workflows.local._validate_node')
+    @only_ci
+    def test_delete_amqp(self, _):
+
+        agent_name = api_internal.generate_agent_name()
+
+        inputs = {
+            'package_url': self.package_url,
+            'agent_name': agent_name
+        }
+
+        blueprint_path = resources.get_resource(
+            'blueprints/agent-delete-amqp/local-agent-blueprint.yaml')
+        self.logger.info('Initiating local env')
+        env = local.init_env(name=self._testMethodName,
+                             blueprint_path=blueprint_path,
+                             inputs=inputs)
+
+        env.execute('install', task_retries=0)
+        self.assert_daemon_alive(name=agent_name)
+
+        env.execute('uninstall', task_retries=1)
+        self.wait_for_daemon_dead(name=agent_name)
