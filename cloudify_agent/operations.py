@@ -90,6 +90,7 @@ def _get_broker_config(ctx):
     attributes['broker_pass'] = broker_pass
     attributes['broker_ssl_enabled'] = bootstrap_agent.broker_ssl_enabled
     attributes['broker_ssl_cert'] = bootstrap_agent.broker_ssl_cert
+    attributes['broker_hostname'] = cloudify_utils.get_manager_ip()
     return attributes
 
 
@@ -220,6 +221,7 @@ def create_agent_from_old_agent(install_agent_timeout=300):
     # We retrieve broker url from old agent in order to support
     # cases when old agent is not connected to current rabbit server.
     broker_url = _get_broker_url(ctx, old_agent)
+    broker_config = _get_broker_config(ctx)
     env_broker_url = os.environ.get('CELERY_BROKER_URL')
     os.environ['CELERY_BROKER_URL'] = broker_url
     try:
@@ -233,7 +235,9 @@ def create_agent_from_old_agent(install_agent_timeout=300):
         result = celery_client.send_task(
             'script_runner.tasks.run',
             args=[script_url],
-            kwargs={'cloudify_agent': new_agent},
+            kwargs={
+                'cloudify_agent': new_agent,
+                'broker_config': broker_config},
             queue=old_agent['queue']
         )
         returned_agent = result.get(timeout=install_agent_timeout)
