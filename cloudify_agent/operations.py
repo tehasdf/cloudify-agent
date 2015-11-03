@@ -184,7 +184,7 @@ def create_new_agent_dict(old_agent):
     new_agent['manager_file_server_url'] = get_manager_file_server_url()
     # Assuming that if there is no version info in the agent then
     # this agent was installed by current manager.
-    new_agent['old_agent_version'] = old_agent.get('version', _VERSION)
+    new_agent['old_agent_version'] = old_agent['version']
     return new_agent
 
 
@@ -199,7 +199,7 @@ def _celery_client(ctx, agent):
     broker_url = utils.internal.get_broker_url(broker_config)
     celery_client = celery.Celery(broker=broker_url, backend=broker_url)
     config = {}
-    if agent['old_agent_version'] != '3.2':
+    if agent['version'] != '3.2':
         config['CELERY_TASK_RESULT_EXPIRES'] = \
             defaults.CELERY_TASK_RESULT_EXPIRES
     _, cert_path = tempfile.mkstemp()
@@ -225,6 +225,7 @@ def create_agent_from_old_agent(install_agent_timeout=300):
         raise NonRecoverableError(
             'cloudify_agent key not available in runtime_properties')
     old_agent = ctx.instance.runtime_properties['cloudify_agent']
+    old_agent['version'] = old_agent.get('version', _VERSION)
     new_agent = create_new_agent_dict(old_agent)
     with _celery_client(ctx, old_agent) as celery_client:
         script_format = '{0}/cloudify/install_agent.py'
