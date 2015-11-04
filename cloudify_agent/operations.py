@@ -197,8 +197,14 @@ def _celery_client(ctx, agent):
     else:
         broker_config = ctx.bootstrap_context.broker_config()
     broker_url = utils.internal.get_broker_url(broker_config)
-    celery_client = celery.Celery(broker=broker_url, backend=broker_url)
-    config = {}
+    ctx.logger.info('Connecting to {0}'.format(broker_url))
+    celery_client = celery.Celery()
+    # We can't pass broker_url to Celery constructor because it would
+    # be overriden by the value from broker_config.py.
+    config = {
+        'BROKER_URL': broker_url,
+        'CELERY_RESULT_BACKEND': broker_url
+    }
     if agent['version'] != '3.2':
         config['CELERY_TASK_RESULT_EXPIRES'] = \
             defaults.CELERY_TASK_RESULT_EXPIRES
@@ -243,9 +249,9 @@ def create_agent_from_old_agent(install_agent_timeout=300):
     if not agent_status.active():
         raise NonRecoverableError('Could not start agent.')
     # Setting old_cloudify_agent in order to uninstall it later.
-    old_agents = ctx.instance.runtime_properties.get('old_cloudify_agent', [])
+    old_agents = ctx.instance.runtime_properties.get('old_cloudify_agents', [])
     old_agents.append(old_agent)
-    ctx.instance.runtime_properties['old_cloudify_agent'] = old_agents
+    ctx.instance.runtime_properties['old_cloudify_agents'] = old_agents
     returned_agent.pop('old_agent_version', None)
     ctx.instance.runtime_properties['cloudify_agent'] = returned_agent
 
