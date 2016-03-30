@@ -1,7 +1,7 @@
 environment:
 
   TOX_ENV: pywin
-
+  APPVEYOR: true
   matrix:
     - PYTHON: C:\Python27
       PYTHON_VERSION: 2.7.8
