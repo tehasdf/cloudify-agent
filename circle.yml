@@ -15,7 +15,7 @@ checkout:
 
 dependencies:
   pre:
-    - pyenv local 2.7.9 2.6.8
+    - pyenv local 2.7.9
   override:
     - pip install -U pip
     - pip install tox
