@@ -15,17 +15,14 @@ checkout:
 
 dependencies:
   pre:
-    - pyenv local 2.7.9 2.6.8
+    - pyenv local 2.7.9
   override:
     - pip install -U pip
     - pip install tox
 
 test:
   override:
-    - case $CIRCLE_NODE_INDEX in 0) tox -e py27 ;; 1) tox -e py26 ;; esac:
-        parallel: true
-    - case $CIRCLE_NODE_INDEX in 0) tox -e docs ;; 1) tox -e flake8 ;;esac:
-        parallel: true
+    - tox -e py27
 
 deployment:
   release:
