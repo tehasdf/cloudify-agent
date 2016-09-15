@@ -1,7 +1,7 @@
 tosca_definitions_version: cloudify_dsl_1_3
 
 imports:
-  - http://www.getcloudify.org/spec/cloudify/4.0m2/types.yaml
+  - https://raw.githubusercontent.com/codilime/cloudify-manager/c54dec02feaf97166077865d4a392b8dc6143d57/resources/rest-service/cloudify/types/types.yaml
 
 inputs:
 
